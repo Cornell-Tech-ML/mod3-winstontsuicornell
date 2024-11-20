@@ -239,7 +239,19 @@ def sum_practice(a: Tensor) -> TensorData:
     return out
 
 
-def tensor_reduce(fn: Callable[[float, float], float]) -> Callable:
+def tensor_reduce(
+    fn: Callable[[float, float], float]
+) -> Callable[[Storage, Shape, Strides, Storage, Shape, Strides, int], None]:
+    """
+    CUDA higher-order tensor reduce function.
+
+    Args:
+        fn: A reduction function that maps two floats to a single float.
+
+    Returns:
+        A tensor reduce function to be executed on CUDA.
+    """
+
     def _reduce(
         out: Storage,
         out_shape: Shape,
@@ -249,44 +261,54 @@ def tensor_reduce(fn: Callable[[float, float], float]) -> Callable:
         a_shape: Shape,
         a_strides: Strides,
         reduce_dim: int,
-        reduce_value: float,
+        init_value: float,
     ) -> None:
         BLOCK_DIM = 1024
-        cache = cuda.shared.array(BLOCK_DIM, dtype=numba.float32)  # Adjust type as needed
-        thread_idx = cuda.threadIdx.x
+        # Shared memory for thread collaboration within a block
+        shared_mem = cuda.shared.array(BLOCK_DIM, numba.float64)
+        out_index = cuda.local.array(MAX_DIMS, numba.int32)
+
+        # Block and thread identifiers
         block_idx = cuda.blockIdx.x
+        thread_idx = cuda.threadIdx.x
 
-        out_index = cuda.local.array(MAX_DIMS, dtype=numba.int32)
-
-        # Initialize shared memory
-        cache[thread_idx] = reduce_value
+        # Initialize shared memory with the initial reduction value
+        shared_mem[thread_idx] = init_value
 
         if block_idx < out_size:
+            # Calculate the output index
             to_index(block_idx, out_shape, out_index)
-            out_pos = index_to_position(out_index, out_strides)
+            dim_length = a_shape[reduce_dim]
 
-            # Reduction over reduce_dim
-            for i in range(thread_idx, a_shape[reduce_dim], BLOCK_DIM):
-                in_index = out_index.copy()
-                in_index[reduce_dim] = i
-                in_pos = index_to_position(in_index, a_strides)
-                cache[thread_idx] = fn(cache[thread_idx], a_storage[in_pos])
+            # Map thread position to the reduction dimension
+            out_index[reduce_dim] = thread_idx + out_index[reduce_dim] * BLOCK_DIM
 
+            if out_index[reduce_dim] < dim_length:
+                # Convert the calculated index to storage position
+                input_pos = index_to_position(out_index, a_strides)
+                shared_mem[thread_idx] = a_storage[input_pos]
+
+            # Synchronize all threads in the block before reduction
             cuda.syncthreads()
 
-            # Shared memory reduction
-            stride = BLOCK_DIM // 2
-            while stride > 0:
-                if thread_idx < stride:
-                    cache[thread_idx] = fn(cache[thread_idx], cache[thread_idx + stride])
+            # Perform reduction using shared memory
+            step = 1
+            while step < BLOCK_DIM:
+                if thread_idx % (2 * step) == 0:
+                    if thread_idx + step < BLOCK_DIM:
+                        shared_mem[thread_idx] = fn(
+                            shared_mem[thread_idx], shared_mem[thread_idx + step]
+                        )
+                step *= 2
                 cuda.syncthreads()
-                stride //= 2
 
-            # Write to output
+            # Write the reduced result to the output tensor
             if thread_idx == 0:
-                out[out_pos] = cache[0]
+                output_pos = index_to_position(out_index, out_strides)
+                out[output_pos] = shared_mem[0]
 
-    return cuda.jit()(_reduce)
+    return cuda.jit()(_reduce)  # type: ignore
+
 
 
 
