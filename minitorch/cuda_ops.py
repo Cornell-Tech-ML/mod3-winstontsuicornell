@@ -376,7 +376,7 @@ def tensor_reduce(
 
 
 def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
-    """This is a practice square MM kernel to prepare for matmul.
+    """Practice square MM kernel to prepare for matmul.
 
     Given a storage `out` and two storage `a` and `b`. Where we know
     both are shape [size, size] with strides [size, 1].
@@ -407,8 +407,47 @@ def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
 
     """
     BLOCK_DIM = 32
-    # TODO: Implement for Task 3.3.
-    raise NotImplementedError("Need to implement for Task 3.3")
+    # # TODO: Implement for Task 3.3.
+    # raise NotImplementedError("Need to implement for Task 3.3")
+    # Allocate shared memory
+    a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
+    b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
+
+    # Thread and block indices
+    tx = cuda.threadIdx.x
+    ty = cuda.threadIdx.y
+    row = cuda.blockIdx.y * cuda.blockDim.y + ty
+    col = cuda.blockIdx.x * cuda.blockDim.x + tx
+
+    # Initialize the output value
+    temp = 0.0
+
+    # Loop over tiles of the input matrices
+    for tile in range((size + BLOCK_DIM - 1) // BLOCK_DIM):
+        # Load a tile of `a` and `b` into shared memory
+        if row < size and tile * BLOCK_DIM + tx < size:
+            a_shared[ty, tx] = a[row * size + tile * BLOCK_DIM + tx]
+        else:
+            a_shared[ty, tx] = 0.0
+
+        if col < size and tile * BLOCK_DIM + ty < size:
+            b_shared[ty, tx] = b[(tile * BLOCK_DIM + ty) * size + col]
+        else:
+            b_shared[ty, tx] = 0.0
+
+        # Synchronize to ensure all threads have loaded their tiles
+        cuda.syncthreads()
+
+        # Perform the computation for this tile
+        for k in range(BLOCK_DIM):
+            temp += a_shared[ty, k] * b_shared[k, tx]
+
+        # Synchronize to ensure no thread overwrites shared memory before others are done
+        cuda.syncthreads()
+
+    # Write the result to the output matrix
+    if row < size and col < size:
+        out[row * size + col] = temp
 
 
 jit_mm_practice = jit(_mm_practice)
