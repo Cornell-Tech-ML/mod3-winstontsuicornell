@@ -30,6 +30,16 @@ Fn = TypeVar("Fn")
 
 
 def njit(fn: Fn, **kwargs: Any) -> Fn:
+    """Wrapper around numba.njit that ensures function inlining.
+
+    Args:
+        fn: Function to compile
+        kwargs: Additional arguments for numba.njit
+
+    Returns:
+        Compiled function
+        
+    """
     return _njit(inline="always", **kwargs)(fn)  # type: ignore
 
 
@@ -143,8 +153,7 @@ class FastOps(TensorOps):
 def tensor_map(
     fn: Callable[[float], float]
 ) -> Callable[[Storage, Shape, Strides, Storage, Shape, Strides], None]:
-    """
-    NUMBA low_level tensor_map function. See `tensor_ops.py` for description.
+    """NUMBA low_level tensor_map function. See `tensor_ops.py` for description.
 
     Optimizations:
 
@@ -157,6 +166,7 @@ def tensor_map(
 
     Returns:
         Tensor map function.
+
     """
 
     def _map(
@@ -183,7 +193,7 @@ def tensor_map(
                 broadcast_index(out_idx, out_shape, in_shape, in_idx)
                 out[i] = fn(in_storage[index_to_position(in_idx, in_strides)])
 
-    return _map  # type: ignore
+    return njit(_map, parallel=True)  # type: ignore
 
 
 
@@ -259,7 +269,7 @@ def tensor_zip(
 
 
     # return njit(parallel=True)(_zip)  # type: ignore
-    return _zip
+    return njit(_zip, parallel=True)
 
 
 
@@ -318,7 +328,7 @@ def tensor_reduce(
         
 
     # return njit(parallel=True)(_reduce)
-    return _reduce
+    return njit(_reduce, parallel=True)
 
 
 def _tensor_matrix_multiply(
