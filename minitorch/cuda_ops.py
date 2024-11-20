@@ -441,22 +441,6 @@ def _tensor_matrix_multiply(
     b_shape: Shape,
     b_strides: Strides,
 ) -> None:
-    """CUDA tensor matrix multiply function.
-
-    Requirements:
-
-    * All data must be first moved to shared memory.
-    * Only read each cell in `a` and `b` once.
-    * Only write to global memory once per kernel.
-
-    Should work for any tensor shapes that broadcast as long as ::
-
-    ```python
-    assert a_shape[-1] == b_shape[-2]
-    ```
-    Returns:
-        None : Fills in `out`
-    """
     BLOCK_DIM = 32
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
@@ -465,11 +449,11 @@ def _tensor_matrix_multiply(
     j = cuda.blockIdx.y * BLOCK_DIM + cuda.threadIdx.y
     pi, pj = cuda.threadIdx.x, cuda.threadIdx.y
     batch = cuda.blockIdx.z
-
+    dim_shared = a_shape[-1]
     tot = 0.0
 
-    for block_offset in range(0, a_shape[2], BLOCK_DIM):
-        if i < a_shape[1] and block_offset + pj < a_shape[2]:
+    for block_offset in range(0, dim_shared, BLOCK_DIM):
+        if i < a_shape[1] and block_offset + pj < dim_shared:
             a_shared[pi, pj] = a_storage[
                 batch * a_strides[0] + i * a_strides[1] + (block_offset + pj) * a_strides[2]
             ]
@@ -494,6 +478,5 @@ def _tensor_matrix_multiply(
         out[
             batch * out_strides[0] + i * out_strides[1] + j * out_strides[2]
         ] = tot
-
 
 tensor_matrix_multiply = cuda.jit(_tensor_matrix_multiply)
