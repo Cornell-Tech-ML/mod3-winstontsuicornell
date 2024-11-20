@@ -3,7 +3,7 @@
 import math
 
 # ## Task 0.1
-from typing import Callable, List, Any
+from typing import Callable, List, Any, Iterable
 
 #
 # Implementation of a prelude of elementary functions.
@@ -67,9 +67,11 @@ def max(a: float, b: float) -> float:
     """Returns the larger of two numbers"""
     return a if a > b else b
 
+
 def is_close(x: float, y: float) -> float:
     """Returns 1.0 if two numbers are close within a tolerance, otherwise returns 0.0"""
     return abs(x - y) < 1e-2
+
 
 def sigmoid(input: float) -> float:
     """Calculates sigmoid of input using sigmoid function"""
@@ -237,7 +239,7 @@ def sum(lst: List[float]) -> float:
     return reduce(lambda x, y: x + y, 0.0, lst)
 
 
-def prod(lst: List[float]) -> float:
+def prod(lst: Iterable[float]) -> float:
     """Computes the product of all elements in a list.
 
     Args:
@@ -250,5 +252,4 @@ def prod(lst: List[float]) -> float:
 
     """
     # return reduce(lambda x, y: x * y, lst, 1.0)
-
-    return reduce(lambda x, y: x * y, 1.0, lst)
+    return reduce(mul, 1.0, lst)

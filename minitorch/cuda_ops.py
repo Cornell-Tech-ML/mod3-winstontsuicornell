@@ -33,10 +33,12 @@ def device_jit(fn: Fn, **kwargs: Any) -> Fn:
     """JIT compile a function for CUDA device execution.
 
     Args:
+    ----
         fn: The function to be compiled.
         **kwargs: Additional keyword arguments to pass to the Numba JIT compiler.
 
     Returns:
+    -------
         The JIT-compiled CUDA device function.
 
     """
@@ -47,10 +49,12 @@ def jit(fn: Fn, **kwargs: Any) -> FakeCUDAKernel:
     """JIT compile a function for CUDA kernel execution.
 
     Args:
+    ----
         fn: The function to be compiled as a CUDA kernel.
         **kwargs: Additional keyword arguments to pass to the Numba JIT compiler.
 
     Returns:
+    -------
         The JIT-compiled CUDA kernel.
 
     """
@@ -72,9 +76,11 @@ class CudaOps(TensorOps):
         """Create a CUDA kernel for applying a unary function to a tensor.
 
         Args:
+        ----
             fn: A function that maps a single float to another float.
 
         Returns:
+        -------
             A function that maps a tensor to an output tensor.
 
         """
@@ -98,9 +104,11 @@ class CudaOps(TensorOps):
         """Create a CUDA kernel for applying a binary function to two tensors.
 
         Args:
+        ----
             fn: A function that maps two floats to a single float.
 
         Returns:
+        -------
             A function that maps two input tensors to an output tensor.
 
         """
@@ -126,10 +134,12 @@ class CudaOps(TensorOps):
         """Create a CUDA kernel for reducing a tensor along a specified dimension.
 
         Args:
+        ----
             fn: A reduction function that maps two floats to a single float.
             start: The initial value for the reduction.
 
         Returns:
+        -------
             A function that reduces a tensor along a specified dimension.
 
         """
@@ -156,10 +166,12 @@ class CudaOps(TensorOps):
         """Perform a matrix multiplication between two tensors using CUDA.
 
         Args:
+        ----
             a: The first tensor.
             b: The second tensor.
 
         Returns:
+        -------
             The resulting tensor from the matrix multiplication.
 
         """
@@ -206,12 +218,15 @@ def tensor_map(
     """CUDA kernel for mapping a unary function over a tensor.
 
     Args:
+    ----
         fn: A unary function to apply to each element of the tensor.
 
     Returns:
+    -------
         A CUDA kernel function for mapping the unary function.
 
     """
+
     def _map(
         out: Storage,
         out_shape: Shape,
@@ -242,12 +257,15 @@ def tensor_zip(
     """CUDA kernel for applying a binary function to two tensors.
 
     Args:
+    ----
         fn: A binary function to apply to elements from two tensors.
 
     Returns:
+    -------
         A CUDA kernel function for applying the binary function.
 
     """
+
     def _zip(
         out: Storage,
         out_shape: Shape,
@@ -306,11 +324,13 @@ def sum_practice(a: Tensor) -> TensorData:
     """CUDA kernel for summing elements of a tensor.
 
     Args:
+    ----
         out: The output storage for the sum result.
         a: The input storage containing the tensor elements.
         size: The size of the input tensor.
 
     Returns:
+    -------
         None.
 
     """
@@ -326,14 +346,16 @@ def sum_practice(a: Tensor) -> TensorData:
 
 
 def tensor_reduce(
-    fn: Callable[[float, float], float]
+    fn: Callable[[float, float], float],
 ) -> Callable[[Storage, Shape, Strides, Storage, Shape, Strides, int], None]:
     """CUDA higher-order tensor reduce function.
 
     Args:
+    ----
         fn: A reduction function that maps two floats to a single float.
 
     Returns:
+    -------
         A tensor reduce function to be executed on CUDA.
 
     """
@@ -396,10 +418,6 @@ def tensor_reduce(
     return cuda.jit()(_reduce)  # type: ignore
 
 
-
-
-
-
 def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
     BLOCK_DIM = 32
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
@@ -437,12 +455,14 @@ def mm_practice(a: Tensor, b: Tensor) -> TensorData:
     """Practice CUDA kernel for matrix multiplication.
 
     Args:
+    ----
         a: First input tensor
         b: Second input tensor
 
     Returns:
+    -------
         TensorData: Result of matrix multiplication
-        
+
     """
     (size, _) = a.shape
     threadsperblock = (THREADS_PER_BLOCK, THREADS_PER_BLOCK)
@@ -467,8 +487,7 @@ def _tensor_matrix_multiply(
     b_shape: Shape,
     b_strides: Strides,
 ) -> None:
-    """
-    CUDA tensor matrix multiply function.
+    """CUDA tensor matrix multiply function.
 
     Performs batched matrix multiplication with shared memory optimization.
 
@@ -478,6 +497,7 @@ def _tensor_matrix_multiply(
     - Global memory is written to only once per kernel.
 
     Args:
+    ----
         out (Storage): Output storage.
         out_shape (Shape): Shape of the output tensor.
         out_strides (Strides): Strides of the output tensor.
@@ -488,6 +508,7 @@ def _tensor_matrix_multiply(
         b_storage (Storage): Storage for tensor B.
         b_shape (Shape): Shape of tensor B.
         b_strides (Strides): Strides of tensor B.
+
     """
     BLOCK_DIM = 32
 

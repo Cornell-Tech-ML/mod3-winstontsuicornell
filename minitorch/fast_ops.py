@@ -33,12 +33,14 @@ def njit(fn: Fn, **kwargs: Any) -> Fn:
     """Wrapper around numba.njit that ensures function inlining.
 
     Args:
+    ----
         fn: Function to compile
         kwargs: Additional arguments for numba.njit
 
     Returns:
+    -------
         Compiled function
-        
+
     """
     return _njit(inline="always", **kwargs)(fn)  # type: ignore
 
@@ -54,7 +56,6 @@ class FastOps(TensorOps):
         """See `tensor_ops.py`"""
         # This line JIT compiles your tensor_map
         f = tensor_map(njit(fn))
-        
 
         def ret(a: Tensor, out: Optional[Tensor] = None) -> Tensor:
             if out is None:
@@ -151,7 +152,7 @@ class FastOps(TensorOps):
 
 
 def tensor_map(
-    fn: Callable[[float], float]
+    fn: Callable[[float], float],
 ) -> Callable[[Storage, Shape, Strides, Storage, Shape, Strides], None]:
     """NUMBA low_level tensor_map function. See `tensor_ops.py` for description.
 
@@ -162,9 +163,11 @@ def tensor_map(
     * When `out` and `in` are stride-aligned, avoid indexing
 
     Args:
+    ----
         fn: function mappings floats-to-floats to apply.
 
     Returns:
+    -------
         Tensor map function.
 
     """
@@ -194,9 +197,6 @@ def tensor_map(
                 out[i] = fn(in_storage[index_to_position(in_idx, in_strides)])
 
     return njit(_map, parallel=True)  # type: ignore
-
-
-
 
 
 def tensor_zip(
@@ -244,7 +244,12 @@ def tensor_zip(
         out_len = len(out_shape)
         a_len = len(a_shape)
         b_len = len(b_shape)
-        if ((a_len == b_len) and (a_strides == b_strides).all() and (a_shape == b_shape).all() and (b_strides == out_strides).all()):
+        if (
+            (a_len == b_len)
+            and (a_strides == b_strides).all()
+            and (a_shape == b_shape).all()
+            and (b_strides == out_strides).all()
+        ):
             for i in prange(out_size):
                 out[i] = fn(a_storage[i], b_storage[i])
         else:
@@ -263,14 +268,12 @@ def tensor_zip(
                 # Finding the b_storage position from the b_index
                 b_pos = index_to_position(b_index, b_strides)
                 # Finding the out_storage position from the out_index
-                #out_pos = index_to_position(out_index, out_strides)
+                # out_pos = index_to_position(out_index, out_strides)
                 # Throwing it in storage
                 out[i] = fn(a_storage[a_pos], b_storage[b_pos])
 
-
     # return njit(parallel=True)(_zip)  # type: ignore
     return njit(_zip, parallel=True)
-
 
 
 def tensor_reduce(
@@ -325,7 +328,6 @@ def tensor_reduce(
                 out_index[reduce_dim] = s
                 j = index_to_position(out_index, a_strides)
                 out[o] = fn(out[o], a_storage[j])
-        
 
     # return njit(parallel=True)(_reduce)
     return njit(_reduce, parallel=True)
@@ -345,6 +347,7 @@ def _tensor_matrix_multiply(
     """NUMBA tensor matrix multiply function.
 
     Args:
+    ----
         out (Storage): storage for `out` tensor
         out_shape (Shape): shape for `out` tensor
         out_strides (Strides): strides for `out` tensor
@@ -356,6 +359,7 @@ def _tensor_matrix_multiply(
         b_strides (Strides): strides for `b` tensor
 
     Returns:
+    -------
         None: Fills in `out`.
 
     """
@@ -393,7 +397,6 @@ def _tensor_matrix_multiply(
                     posB += b_strides[1]
                 outPos = x * out_strides[0] + y * out_strides[1] + z * out_strides[2]
                 out[outPos] = val
-
 
 
 tensor_matrix_multiply = njit(_tensor_matrix_multiply, parallel=True)

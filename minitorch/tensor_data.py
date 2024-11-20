@@ -4,6 +4,7 @@ import random
 from typing import Iterable, Optional, Sequence, Tuple, Union
 
 import numba
+import numba.cuda
 import numpy as np
 import numpy.typing as npt
 from numpy import array, float64
@@ -71,7 +72,6 @@ def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
         sh = shape[i]
         out_index[i] = int(cur_ord % sh)
         cur_ord = cur_ord // sh
-    
 
 
 def broadcast_index(
