@@ -252,33 +252,29 @@ def tensor_reduce(fn: Callable[[float, float], float]) -> Callable:
         reduce_value: float,
     ) -> None:
         BLOCK_DIM = 1024
-        cache = cuda.shared.array(BLOCK_DIM, numba.float64)  # Match dtype
+        cache = cuda.shared.array(BLOCK_DIM, dtype=numba.float32)  # Adjust type as needed
         thread_idx = cuda.threadIdx.x
         block_idx = cuda.blockIdx.x
 
-        out_index = cuda.local.array(MAX_DIMS, numba.int32)
+        out_index = cuda.local.array(MAX_DIMS, dtype=numba.int32)
 
-        # Initialize cache
+        # Initialize shared memory
         cache[thread_idx] = reduce_value
 
         if block_idx < out_size:
-            # Compute output index
             to_index(block_idx, out_shape, out_index)
             out_pos = index_to_position(out_index, out_strides)
 
-            # Compute reduction
-            reduce_length = a_shape[reduce_dim]
-            for i in range(thread_idx, reduce_length, BLOCK_DIM):
+            # Reduction over reduce_dim
+            for i in range(thread_idx, a_shape[reduce_dim], BLOCK_DIM):
                 in_index = out_index.copy()
                 in_index[reduce_dim] = i
                 in_pos = index_to_position(in_index, a_strides)
-
-                # Perform the reduction
                 cache[thread_idx] = fn(cache[thread_idx], a_storage[in_pos])
 
             cuda.syncthreads()
 
-            # Reduction within block
+            # Shared memory reduction
             stride = BLOCK_DIM // 2
             while stride > 0:
                 if thread_idx < stride:
@@ -286,11 +282,12 @@ def tensor_reduce(fn: Callable[[float, float], float]) -> Callable:
                 cuda.syncthreads()
                 stride //= 2
 
-            # Store result
+            # Write to output
             if thread_idx == 0:
                 out[out_pos] = cache[0]
 
     return cuda.jit()(_reduce)
+
 
 
 
