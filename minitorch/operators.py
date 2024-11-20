@@ -67,11 +67,9 @@ def max(a: float, b: float) -> float:
     """Returns the larger of two numbers"""
     return a if a > b else b
 
-
-def is_close(a: float, b: float, tol: float = 1e-2) -> float:
+def is_close(x: float, y: float) -> float:
     """Returns 1.0 if two numbers are close within a tolerance, otherwise returns 0.0"""
-    return 1.0 if abs(a - b) < tol else 0.0
-
+    return abs(x - y) < 1e-2
 
 def sigmoid(input: float) -> float:
     """Calculates sigmoid of input using sigmoid function"""
