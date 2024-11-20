@@ -5,6 +5,17 @@ from typing import List, Tuple
 
 
 def make_pts(N: int) -> List[Tuple[float, float]]:
+    """Generate a list of N random 2D points.
+
+    Args:
+    ----
+        N: Number of points to generate.
+
+    Returns:
+    -------
+        List of tuples, where each tuple represents a point (x1, x2).
+
+    """
     X = []
     for i in range(N):
         x_1 = random.random()
@@ -21,6 +32,17 @@ class Graph:
 
 
 def simple(N: int) -> Graph:
+    """Create a dataset with labels based on whether x1 is less than 0.5.
+
+    Args:
+    ----
+        N: Number of points to generate.
+
+    Returns:
+    -------
+        A Graph object containing N points and their binary labels.
+
+    """
     X = make_pts(N)
     y = []
     for x_1, x_2 in X:
@@ -30,6 +52,17 @@ def simple(N: int) -> Graph:
 
 
 def diag(N: int) -> Graph:
+    """Create a dataset with labels based on whether x1 + x2 is less than 0.5.
+
+    Args:
+    ----
+        N: Number of points to generate.
+
+    Returns:
+    -------
+        A Graph object containing N points and their binary labels.
+
+    """
     X = make_pts(N)
     y = []
     for x_1, x_2 in X:
@@ -39,6 +72,17 @@ def diag(N: int) -> Graph:
 
 
 def split(N: int) -> Graph:
+    """Create a dataset with labels based on whether x1 is outside the range [0.2, 0.8].
+
+    Args:
+    ----
+        N: Number of points to generate.
+
+    Returns:
+    -------
+        A Graph object containing N points and their binary labels.
+
+    """
     X = make_pts(N)
     y = []
     for x_1, x_2 in X:
@@ -48,6 +92,17 @@ def split(N: int) -> Graph:
 
 
 def xor(N: int) -> Graph:
+    """Create a dataset with XOR labels based on x1 and x2.
+
+    Args:
+    ----
+        N: Number of points to generate.
+
+    Returns:
+    -------
+        A Graph object containing N points and their XOR-based binary labels.
+
+    """
     X = make_pts(N)
     y = []
     for x_1, x_2 in X:
@@ -57,6 +112,17 @@ def xor(N: int) -> Graph:
 
 
 def circle(N: int) -> Graph:
+    """Create a dataset with labels based on whether the point is outside a circle.
+
+    Args:
+    ----
+        N: Number of points to generate.
+
+    Returns:
+    -------
+        A Graph object containing N points and their circular binary labels.
+
+    """
     X = make_pts(N)
     y = []
     for x_1, x_2 in X:
@@ -67,6 +133,18 @@ def circle(N: int) -> Graph:
 
 
 def spiral(N: int) -> Graph:
+    """Create a dataset representing a spiral pattern.
+
+    Args:
+    ----
+        N: Number of points to generate.
+
+    Returns:
+    -------
+        A Graph object containing N points arranged in a spiral pattern with binary labels.
+
+    """
+
     def x(t: float) -> float:
         return t * math.cos(t) / 20.0
 
