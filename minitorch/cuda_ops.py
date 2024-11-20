@@ -261,25 +261,23 @@ def _sum_practice(out: Storage, a: Storage, size: int) -> None:
 
     """
     BLOCK_DIM = 32
-
-    # Shared memory for intermediate results
     cache = cuda.shared.array(BLOCK_DIM, numba.float64)
     i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
     pos = cuda.threadIdx.x
 
-    # Load input into shared memory
+    # Load data into shared memory
     cache[pos] = a[i] if i < size else 0.0
     cuda.syncthreads()
 
-    # Perform reduction in shared memory
+    # Perform binary reduction
     stride = 1
     while stride < BLOCK_DIM:
-        if pos % (2 * stride) == 0 and (pos + stride) < BLOCK_DIM:
+        if pos % (2 * stride) == 0 and pos + stride < BLOCK_DIM:
             cache[pos] += cache[pos + stride]
         stride *= 2
         cuda.syncthreads()
 
-    # Write the block result to output
+    # Write the result to the output
     if pos == 0:
         out[cuda.blockIdx.x] = cache[0]
 
