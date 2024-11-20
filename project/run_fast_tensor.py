@@ -34,6 +34,7 @@ class Network(minitorch.Module):
         x = self.layer2.forward(x).relu()
         x = self.layer3.forward(x).sigmoid()
         return x
+    
 
 
 class Linear(minitorch.Module):
