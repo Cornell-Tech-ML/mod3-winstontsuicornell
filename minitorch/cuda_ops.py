@@ -162,104 +162,58 @@ def tensor_map(
     """
 
     def _map(
-        out: Storage,
-        out_shape: Shape,
-        out_strides: Strides,
-        out_size: int,
-        in_storage: Storage,
-        in_shape: Shape,
-        in_strides: Strides,
-    ) -> None:
+    out: Storage,
+    out_shape: Shape,
+    out_strides: Strides,
+    out_size: int,
+    in_storage: Storage,
+    in_shape: Shape,
+    in_strides: Strides,
+) -> None:
         out_index = cuda.local.array(MAX_DIMS, numba.int32)
         in_index = cuda.local.array(MAX_DIMS, numba.int32)
         i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
         if i < out_size:
-            # Compute the output index
+            # Compute indices
             to_index(i, out_shape, out_index)
-            # Broadcast to input index
             broadcast_index(out_index, out_shape, in_shape, in_index)
-            # Get the positions in memory
             in_position = index_to_position(in_index, in_strides)
             out_position = index_to_position(out_index, out_strides)
-            # Apply the mapping function
+            # Apply the function
             out[out_position] = fn(in_storage[in_position])
 
-    return cuda.jit()(_map)  # type: ignore
 
 
-def tensor_zip(
-    fn: Callable[[float, float], float],
-) -> Callable[
-    [Storage, Shape, Strides, Storage, Shape, Strides, Storage, Shape, Strides], None
-]:
-    """CUDA higher-order tensor zipWith (or map2) function ::
+def _zip(
+    out: Storage,
+    out_shape: Shape,
+    out_strides: Strides,
+    out_size: int,
+    a_storage: Storage,
+    a_shape: Shape,
+    a_strides: Strides,
+    b_storage: Storage,
+    b_shape: Shape,
+    b_strides: Strides,
+) -> None:
+    out_index = cuda.local.array(MAX_DIMS, numba.int32)
+    a_index = cuda.local.array(MAX_DIMS, numba.int32)
+    b_index = cuda.local.array(MAX_DIMS, numba.int32)
+    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if i < out_size:
+        # Compute indices for a and b
+        to_index(i, out_shape, out_index)
+        broadcast_index(out_index, out_shape, a_shape, a_index)
+        broadcast_index(out_index, out_shape, b_shape, b_index)
+        a_position = index_to_position(a_index, a_strides)
+        b_position = index_to_position(b_index, b_strides)
+        out_position = index_to_position(out_index, out_strides)
+        # Apply the function
+        out[out_position] = fn(a_storage[a_position], b_storage[b_position])
 
-      fn_zip = tensor_zip(fn)
-      fn_zip(out, ...)
-
-    Args:
-    ----
-        fn: function mappings two floats to float to apply.
-
-    Returns:
-    -------
-        Tensor zip function.
-
-    """
-
-    def _zip(
-        out: Storage,
-        out_shape: Shape,
-        out_strides: Strides,
-        out_size: int,
-        a_storage: Storage,
-        a_shape: Shape,
-        a_strides: Strides,
-        b_storage: Storage,
-        b_shape: Shape,
-        b_strides: Strides,
-    ) -> None:
-        out_index = cuda.local.array(MAX_DIMS, numba.int32)
-        a_index = cuda.local.array(MAX_DIMS, numba.int32)
-        b_index = cuda.local.array(MAX_DIMS, numba.int32)
-        i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-        if i < out_size:
-            # Compute the output index
-            to_index(i, out_shape, out_index)
-            # Broadcast to `a` and `b` indices
-            broadcast_index(out_index, out_shape, a_shape, a_index)
-            broadcast_index(out_index, out_shape, b_shape, b_index)
-            # Get the positions in memory
-            a_position = index_to_position(a_index, a_strides)
-            b_position = index_to_position(b_index, b_strides)
-            out_position = index_to_position(out_index, out_strides)
-            # Apply the zip function
-            out[out_position] = fn(a_storage[a_position], b_storage[b_position])
-
-    return cuda.jit()(_zip)  # type: ignore
 
 
 def _sum_practice(out: Storage, a: Storage, size: int) -> None:
-    """Practice sum kernel to prepare for reduce.
-
-    Given an array of length $n$ and out of size $next{blockDIM}$
-    it should sum up each blockDim values into an out cell.
-
-    $[a_1, a_2, ..., a_{100}]$
-
-    |
-
-    $[a_1 +...+ a_{31}, a_{32} + ... + a_{64}, ... ,]$
-
-    Note: Each block must do the sum using shared memory!
-
-    Args:
-    ----
-        out (Storage): storage for `out` tensor.
-        a (Storage): storage for `a` tensor.
-        size (int):  length of a.
-
-    """
     BLOCK_DIM = 32
     cache = cuda.shared.array(BLOCK_DIM, numba.float64)
     i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
@@ -269,20 +223,19 @@ def _sum_practice(out: Storage, a: Storage, size: int) -> None:
     cache[pos] = a[i] if i < size else 0.0
     cuda.syncthreads()
 
-    # Perform binary reduction
+    # Reduce within the block
     stride = 1
     while stride < BLOCK_DIM:
-        if pos % (2 * stride) == 0 and pos + stride < BLOCK_DIM:
+        if pos % (2 * stride) == 0:
             cache[pos] += cache[pos + stride]
         stride *= 2
         cuda.syncthreads()
 
-    # Write the result to the output
+    # Write the result
     if pos == 0:
         out[cuda.blockIdx.x] = cache[0]
 
 
-jit_sum_practice = cuda.jit()(_sum_practice)
 
 
 def sum_practice(a: Tensor) -> TensorData:
