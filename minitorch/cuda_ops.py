@@ -419,31 +419,59 @@ def tensor_reduce(
 
 
 def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
+    """Practice CUDA kernel for matrix multiplication using shared memory.
+
+    Args:
+    ----
+        out (Storage): Output matrix storage.
+        a (Storage): Input matrix A storage.
+        b (Storage): Input matrix B storage.
+        size (int): Size of the square matrix (size x size).
+
+    """
+    # Define the block size for shared memory arrays
     BLOCK_DIM = 32
+
+    # Allocate shared memory for blocks of A and B
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
+
+    # Thread indices within the block
     tx = cuda.threadIdx.x
     ty = cuda.threadIdx.y
+
+    # Global row and column indices for the current thread
     row = cuda.blockIdx.y * cuda.blockDim.y + ty
     col = cuda.blockIdx.x * cuda.blockDim.x + tx
 
+    # Accumulate the computed value for the current element
     temp = 0.0
+
+    # Iterate over tiles of the matrix
     for tile in range((size + BLOCK_DIM - 1) // BLOCK_DIM):
+        # Load tile of matrix A into shared memory
         if row < size and tile * BLOCK_DIM + tx < size:
             a_shared[ty, tx] = a[row * size + tile * BLOCK_DIM + tx]
         else:
-            a_shared[ty, tx] = 0.0
+            a_shared[ty, tx] = 0.0  # Load 0 if out of bounds
+
+        # Load tile of matrix B into shared memory
         if col < size and tile * BLOCK_DIM + ty < size:
             b_shared[ty, tx] = b[(tile * BLOCK_DIM + ty) * size + col]
         else:
-            b_shared[ty, tx] = 0.0
+            b_shared[ty, tx] = 0.0  # Load 0 if out of bounds
 
+        # Synchronize threads to ensure all threads finish loading
         cuda.syncthreads()
 
+        # Perform partial computation for the current tile
         for k in range(BLOCK_DIM):
             temp += a_shared[ty, k] * b_shared[k, tx]
+
+        # Synchronize threads to prevent race conditions in shared memory
         cuda.syncthreads()
 
+    # Store the computed value into the output matrix
     if row < size and col < size:
         out[row * size + col] = temp
 
@@ -452,26 +480,36 @@ jit_mm_practice = jit(_mm_practice)
 
 
 def mm_practice(a: Tensor, b: Tensor) -> TensorData:
-    """Practice CUDA kernel for matrix multiplication.
+    """Wrapper for the CUDA matrix multiplication kernel.
 
     Args:
     ----
-        a: First input tensor
-        b: Second input tensor
+        a (Tensor): Input tensor A.
+        b (Tensor): Input tensor B.
 
     Returns:
     -------
-        TensorData: Result of matrix multiplication
+        TensorData: Result of the matrix multiplication.
 
     """
-    (size, _) = a.shape
-    threadsperblock = (THREADS_PER_BLOCK, THREADS_PER_BLOCK)
-    blockspergrid = 1
+    (size, _) = a.shape  # Assume square matrices
+
+    # Define block and grid dimensions
+    threadsperblock = (THREADS_PER_BLOCK, THREADS_PER_BLOCK)  # Threads per block
+    blockspergrid = 1  # Single grid for now
+
+    # Allocate output tensor data
     out = TensorData([0.0 for i in range(size * size)], (size, size))
+
+    # Move output tensor to GPU memory
     out.to_cuda_()
+
+    # Launch the CUDA kernel
     jit_mm_practice[blockspergrid, threadsperblock](
         out.tuple()[0], a._tensor._storage, b._tensor._storage, size
     )
+
+    # Return the result tensor
     return out
 
 
@@ -487,72 +525,66 @@ def _tensor_matrix_multiply(
     b_shape: Shape,
     b_strides: Strides,
 ) -> None:
-    """CUDA tensor matrix multiply function.
-
-    Performs batched matrix multiplication with shared memory optimization.
-
-    Requirements:
-    - All data is moved to shared memory.
-    - Each element in `a` and `b` is read exactly once.
-    - Global memory is written to only once per kernel.
+    """CUDA tensor matrix multiplication function using shared memory.
 
     Args:
     ----
-        out (Storage): Output storage.
+        out (Storage): Output tensor storage.
         out_shape (Shape): Shape of the output tensor.
         out_strides (Strides): Strides of the output tensor.
         out_size (int): Total elements in the output tensor.
-        a_storage (Storage): Storage for tensor A.
+        a_storage (Storage): Input tensor A storage.
         a_shape (Shape): Shape of tensor A.
         a_strides (Strides): Strides of tensor A.
-        b_storage (Storage): Storage for tensor B.
+        b_storage (Storage): Input tensor B storage.
         b_shape (Shape): Shape of tensor B.
         b_strides (Strides): Strides of tensor B.
 
     """
     BLOCK_DIM = 32
 
-    # Shared memory for sub-blocks of A and B
+    # Shared memory for tiles of A and B
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
 
-    # Batch dimension
+    # Batch index
     batch = cuda.blockIdx.z
     a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0
     b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
 
-    # Final position in the output matrix
+    # Global row and column indices
     i = cuda.blockIdx.x * BLOCK_DIM + cuda.threadIdx.x
     j = cuda.blockIdx.y * BLOCK_DIM + cuda.threadIdx.y
 
-    # Local thread indices within a block
+    # Local thread indices within the block
     pi = cuda.threadIdx.x
     pj = cuda.threadIdx.y
 
-    val = 0.0
+    val = 0.0  # Accumulator for the result
     shared_dim = a_shape[2]  # Shared dimension for matrix multiplication
 
-    # Iterate over tiles of the shared dimension
+    # Iterate over tiles in the shared dimension
     for k0 in range(0, shared_dim, BLOCK_DIM):
-        # Load sub-blocks of A and B into shared memory
+        # Load sub-block of A into shared memory
         if i < a_shape[1] and (k0 + pj) < shared_dim:
             a_shared[pi, pj] = a_storage[
                 batch * a_batch_stride + i * a_strides[1] + (k0 + pj) * a_strides[2]
             ]
         else:
-            a_shared[pi, pj] = 0.0
+            a_shared[pi, pj] = 0.0  # Load 0 if out of bounds
 
+        # Load sub-block of B into shared memory
         if j < b_shape[2] and (k0 + pi) < shared_dim:
             b_shared[pi, pj] = b_storage[
                 batch * b_batch_stride + (k0 + pi) * b_strides[1] + j * b_strides[2]
             ]
         else:
-            b_shared[pi, pj] = 0.0
+            b_shared[pi, pj] = 0.0  # Load 0 if out of bounds
 
-        # Synchronize threads before computation
+        # Synchronize threads to ensure all threads finish loading
         cuda.syncthreads()
 
-        # Compute partial product for the current tile
+        # Compute partial result for the current tile
         for k in range(BLOCK_DIM):
             if (k0 + k) < shared_dim:
                 val += a_shared[pi, k] * b_shared[k, pj]
@@ -560,7 +592,7 @@ def _tensor_matrix_multiply(
         # Synchronize threads before loading the next tile
         cuda.syncthreads()
 
-    # Write the computed value to the global memory
+    # Write the result back to global memory
     if i < out_shape[1] and j < out_shape[2]:
         out_idx = batch * out_strides[0] + i * out_strides[1] + j * out_strides[2]
         out[out_idx] = val

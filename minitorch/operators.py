@@ -173,7 +173,7 @@ def zipWith(
     return [fn(x, y) for x, y in zip(lst1, lst2)]
 
 
-def reduce(fn: Callable[[Any, Any], Any], start: Any, lst: List[Any]) -> Any:
+def reduce(fn: Callable[[Any, Any], Any], start: Any, lst: Iterable[Any]) -> Any:
     """Reduces a list to a single value by applying a function cumulatively, starting from an initial value.
 
     Args:
