@@ -470,8 +470,7 @@ def _tensor_matrix_multiply(
     """
     CUDA tensor matrix multiply function.
 
-    Performs batched matrix multiplication. Moves data to shared memory for 
-    improved performance and computes the result in parallel.
+    Performs batched matrix multiplication with shared memory optimization.
 
     Requirements:
     - All data is moved to shared memory.
@@ -479,61 +478,71 @@ def _tensor_matrix_multiply(
     - Global memory is written to only once per kernel.
 
     Args:
-        out (Storage): Storage for the output tensor.
+        out (Storage): Output storage.
         out_shape (Shape): Shape of the output tensor.
-        out_strides (Strides): Strides for the output tensor.
-        out_size (int): Total number of elements in the output tensor.
-        a_storage (Storage): Storage for the first input tensor.
-        a_shape (Shape): Shape of the first input tensor.
-        a_strides (Strides): Strides for the first input tensor.
-        b_storage (Storage): Storage for the second input tensor.
-        b_shape (Shape): Shape of the second input tensor.
-        b_strides (Strides): Strides for the second input tensor.
+        out_strides (Strides): Strides of the output tensor.
+        out_size (int): Total elements in the output tensor.
+        a_storage (Storage): Storage for tensor A.
+        a_shape (Shape): Shape of tensor A.
+        a_strides (Strides): Strides of tensor A.
+        b_storage (Storage): Storage for tensor B.
+        b_shape (Shape): Shape of tensor B.
+        b_strides (Strides): Strides of tensor B.
     """
     BLOCK_DIM = 32
+
+    # Shared memory for sub-blocks of A and B
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
 
+    # Batch dimension
     batch = cuda.blockIdx.z
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    pi, pj = cuda.threadIdx.x, cuda.threadIdx.y
-
     a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0
     b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
 
-    dim_shared = a_shape[2]
-    tot = 0.0
+    # Final position in the output matrix
+    i = cuda.blockIdx.x * BLOCK_DIM + cuda.threadIdx.x
+    j = cuda.blockIdx.y * BLOCK_DIM + cuda.threadIdx.y
 
-    for block_s in range(0, dim_shared, BLOCK_DIM):
-        ka = block_s + pj
-        kb = block_s + pi
+    # Local thread indices within a block
+    pi = cuda.threadIdx.x
+    pj = cuda.threadIdx.y
 
-        if i < a_shape[1] and ka < a_shape[2]:
+    val = 0.0
+    shared_dim = a_shape[2]  # Shared dimension for matrix multiplication
+
+    # Iterate over tiles of the shared dimension
+    for k0 in range(0, shared_dim, BLOCK_DIM):
+        # Load sub-blocks of A and B into shared memory
+        if i < a_shape[1] and (k0 + pj) < shared_dim:
             a_shared[pi, pj] = a_storage[
-                batch * a_batch_stride + i * a_strides[1] + ka * a_strides[2]
+                batch * a_batch_stride + i * a_strides[1] + (k0 + pj) * a_strides[2]
             ]
         else:
             a_shared[pi, pj] = 0.0
 
-        if kb < b_shape[1] and j < b_shape[2]:
+        if j < b_shape[2] and (k0 + pi) < shared_dim:
             b_shared[pi, pj] = b_storage[
-                batch * b_batch_stride + kb * b_strides[1] + j * b_strides[2]
+                batch * b_batch_stride + (k0 + pi) * b_strides[1] + j * b_strides[2]
             ]
         else:
             b_shared[pi, pj] = 0.0
 
+        # Synchronize threads before computation
         cuda.syncthreads()
 
+        # Compute partial product for the current tile
         for k in range(BLOCK_DIM):
-            if k + block_s < dim_shared:
-                tot += a_shared[pi, k] * b_shared[k, pj]
+            if (k0 + k) < shared_dim:
+                val += a_shared[pi, k] * b_shared[k, pj]
 
+        # Synchronize threads before loading the next tile
         cuda.syncthreads()
 
+    # Write the computed value to the global memory
     if i < out_shape[1] and j < out_shape[2]:
-        out[batch * out_strides[0] + i * out_strides[1] + j * out_strides[2]] = tot
+        out_idx = batch * out_strides[0] + i * out_strides[1] + j * out_strides[2]
+        out[out_idx] = val
 
 
 tensor_matrix_multiply = cuda.jit(_tensor_matrix_multiply)
-
