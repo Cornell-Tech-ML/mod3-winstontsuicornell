@@ -154,49 +154,56 @@ class FastOps(TensorOps):
 def tensor_map(
     fn: Callable[[float], float],
 ) -> Callable[[Storage, Shape, Strides, Storage, Shape, Strides], None]:
-    """NUMBA low_level tensor_map function. See `tensor_ops.py` for description.
+    """NUMBA low-level tensor_map function. Applies a given function element-wise
+    on the input tensor and stores the results in the output tensor.
 
     Optimizations:
-
-    * Main loop in parallel
-    * All indices use numpy buffers
-    * When `out` and `in` are stride-aligned, avoid indexing
+    * Parallelizes the main loop.
+    * Uses numpy buffers for indexing.
+    * Avoids indexing when strides and shapes are aligned.
 
     Args:
     ----
-        fn: function mappings floats-to-floats to apply.
+        fn: A function mapping floats to floats to be applied element-wise.
 
     Returns:
     -------
-        Tensor map function.
+        A tensor map function that can be called with tensor storage, shapes, and strides.
 
     """
 
     def _map(
-        out: Storage,
-        out_shape: Shape,
-        out_strides: Strides,
-        in_storage: Storage,
-        in_shape: Shape,
-        in_strides: Strides,
+        out: Storage,  # Output tensor storage.
+        out_shape: Shape,  # Shape of the output tensor.
+        out_strides: Strides,  # Strides of the output tensor.
+        in_storage: Storage,  # Input tensor storage.
+        in_shape: Shape,  # Shape of the input tensor.
+        in_strides: Strides,  # Strides of the input tensor.
     ) -> None:
-        # Task 3.1.
+        # Check if input and output tensors are aligned.
         if (
-            (len(in_shape) == len(out_shape))
-            and (in_shape == out_shape).all()
-            and (in_strides == out_strides).all()
+            (len(in_shape) == len(out_shape))  # Same number of dimensions.
+            and (in_shape == out_shape).all()  # Shapes match.
+            and (in_strides == out_strides).all()  # Strides are aligned.
         ):
+            # Directly apply the function to all elements in parallel.
             for i in prange(len(out)):
                 out[i] = fn(in_storage[i])
         else:
+            # General case: Perform element-wise mapping with indexing.
             for i in prange(len(out)):
+                # Temporary index buffers for input and output tensors.
                 in_idx = in_shape.copy()
                 out_idx = out_shape.copy()
+                # Convert flat index `i` to multidimensional index.
                 to_index(i, out_shape, out_idx)
+                # Map output index to corresponding input index.
                 broadcast_index(out_idx, out_shape, in_shape, in_idx)
+                # Compute and store the result.
                 out[i] = fn(in_storage[index_to_position(in_idx, in_strides)])
 
-    return njit(_map, parallel=True)  # type: ignore
+    # Compile the function with Numba for parallel execution.
+    return njit(_map, parallel=True)
 
 
 def tensor_zip(
@@ -204,132 +211,120 @@ def tensor_zip(
 ) -> Callable[
     [Storage, Shape, Strides, Storage, Shape, Strides, Storage, Shape, Strides], None
 ]:
-    """NUMBA higher-order tensor zip function. See `tensor_ops.py` for description.
+    """NUMBA low-level tensor_zip function. Applies a given binary function element-wise
+    on two input tensors and stores the results in the output tensor.
 
     Optimizations:
-
-    * Main loop in parallel
-    * All indices use numpy buffers
-    * When `out`, `a`, `b` are stride-aligned, avoid indexing
+    * Parallelizes the main loop.
+    * Uses numpy buffers for indexing.
+    * Avoids indexing when strides and shapes are aligned.
 
     Args:
     ----
-        fn: function maps two floats to float to apply.
+        fn: A function mapping two floats to a float to be applied element-wise.
 
     Returns:
     -------
-        Tensor zip function.
+        A tensor zip function that can be called with tensor storages, shapes, and strides.
 
     """
 
     def _zip(
-        out: Storage,
-        out_shape: Shape,
-        out_strides: Strides,
-        a_storage: Storage,
-        a_shape: Shape,
-        a_strides: Strides,
-        b_storage: Storage,
-        b_shape: Shape,
-        b_strides: Strides,
+        out: Storage,  # Output tensor storage.
+        out_shape: Shape,  # Shape of the output tensor.
+        out_strides: Strides,  # Strides of the output tensor.
+        a_storage: Storage,  # First input tensor storage.
+        a_shape: Shape,  # Shape of the first input tensor.
+        a_strides: Strides,  # Strides of the first input tensor.
+        b_storage: Storage,  # Second input tensor storage.
+        b_shape: Shape,  # Shape of the second input tensor.
+        b_strides: Strides,  # Strides of the second input tensor.
     ) -> None:
-        # TODO: Implement for Task 3.1.
-        # out_index = np.zeros(len(out_shape), dtype=np.int32)  # Buffer for output index
-        # for i in prange(len(out)):  # Parallel loop
-        #     to_index(i, out_shape, out_index)  # Convert flat index to multidimensional index
-        #     a_pos = index_to_position(out_index, a_strides)  # Get position in a_storage
-        #     b_pos = index_to_position(out_index, b_strides)  # Get position in b_storage
-        #     out[i] = fn(a_storage[a_pos], b_storage[b_pos])  # Apply function and store result
-        out_size = len(out)
-        out_len = len(out_shape)
-        a_len = len(a_shape)
-        b_len = len(b_shape)
+        out_size = len(out)  # Total number of elements in the output tensor.
+
+        # Check if input and output tensors are aligned.
         if (
-            (a_len == b_len)
-            and (a_strides == b_strides).all()
-            and (a_shape == b_shape).all()
-            and (b_strides == out_strides).all()
+            (
+                len(a_shape) == len(b_shape)
+            )  # Both inputs have the same number of dimensions.
+            and (a_shape == b_shape).all()  # Shapes match.
+            and (a_strides == b_strides).all()  # Strides are aligned.
+            and (b_strides == out_strides).all()  # Output strides also match.
         ):
+            # Directly apply the function to all elements in parallel.
             for i in prange(out_size):
                 out[i] = fn(a_storage[i], b_storage[i])
         else:
+            # General case: Perform element-wise zipping with indexing.
             for i in prange(out_size):
-                out_index = np.empty(out_len, np.int32)
-                a_index = np.empty(a_len, np.int32)
-                b_index = np.empty(b_len, np.int32)
-                # Gaining the out_index
+                out_index = np.empty(len(out_shape), np.int32)
+                a_index = np.empty(len(a_shape), np.int32)
+                b_index = np.empty(len(b_shape), np.int32)
+                # Convert flat index `i` to multidimensional index.
                 to_index(i, out_shape, out_index)
-                # Gain the a_index from the out_index
+                # Map output index to corresponding input indices.
                 broadcast_index(out_index, out_shape, a_shape, a_index)
-                # Gain the b_index from the out_index
                 broadcast_index(out_index, out_shape, b_shape, b_index)
-                # Finding the a_storage position from the a_index
+                # Compute and store the result.
                 a_pos = index_to_position(a_index, a_strides)
-                # Finding the b_storage position from the b_index
                 b_pos = index_to_position(b_index, b_strides)
-                # Finding the out_storage position from the out_index
-                # out_pos = index_to_position(out_index, out_strides)
-                # Throwing it in storage
                 out[i] = fn(a_storage[a_pos], b_storage[b_pos])
 
-    # return njit(parallel=True)(_zip)  # type: ignore
+    # Compile the function with Numba for parallel execution.
     return njit(_zip, parallel=True)
 
 
 def tensor_reduce(
     fn: Callable[[float, float], float],
 ) -> Callable[[Storage, Shape, Strides, Storage, Shape, Strides, int], None]:
-    """NUMBA higher-order tensor reduce function. See `tensor_ops.py` for description.
+    """NUMBA low-level tensor_reduce function. Reduces a tensor along a specified dimension
+    using a binary reduction function.
 
     Optimizations:
-
-    * Main loop in parallel
-    * All indices use numpy buffers
-    * Inner-loop should not call any functions or write non-local variables
+    * Parallelizes the main loop.
+    * Uses numpy buffers for indexing.
+    * Minimizes inner-loop function calls and variable writes.
 
     Args:
     ----
-        fn: reduction function mapping two floats to float.
+        fn: A reduction function mapping two floats to a float.
 
     Returns:
     -------
-        Tensor reduce function
+        A tensor reduce function that can be called with tensor storages, shapes, strides, and reduction dimension.
 
     """
 
     def _reduce(
-        out: Storage,
-        out_shape: Shape,
-        out_strides: Strides,
-        a_storage: Storage,
-        a_shape: Shape,
-        a_strides: Strides,
-        reduce_dim: int,
+        out: Storage,  # Output tensor storage.
+        out_shape: Shape,  # Shape of the output tensor.
+        out_strides: Strides,  # Strides of the output tensor.
+        a_storage: Storage,  # Input tensor storage.
+        a_shape: Shape,  # Shape of the input tensor.
+        a_strides: Strides,  # Strides of the input tensor.
+        reduce_dim: int,  # Dimension along which to reduce.
     ) -> None:
-        # TODO: Implement for Task 3.1.
-        # out_index = np.zeros(len(out_shape), dtype=np.int32)  # Buffer for output index
-        # in_index = np.zeros(len(a_shape), dtype=np.int32)  # Buffer for input index
-        # for i in prange(len(out)):  # Parallel loop
-        #     to_index(i, out_shape, out_index)  # Convert flat index to multidimensional index
-        #     reduced_value = out[i]  # Start with the initial value in the output tensor
-        #     for j in range(a_shape[reduce_dim]):  # Iterate along the reduction dimension
-        #         in_index[:] = out_index  # Copy current index
-        #         in_index[reduce_dim] = j  # Update index for the reduction dimension
-        #         in_pos = index_to_position(in_index, a_strides)  # Get position in input storage
-        #         reduced_value = fn(reduced_value, a_storage[in_pos])  # Apply reduction
-        #     out[i] = reduced_value  # Write reduced result to output tensor
+        reduce_size = a_shape[reduce_dim]  # Size of the reduction dimension.
 
-        reduce_size = a_shape[reduce_dim]
+        # Iterate over all elements in the output tensor.
         for i in prange(len(out)):
+            # Temporary buffer for the output tensor index.
             out_index: Index = np.zeros(MAX_DIMS, np.int32)
+            # Convert flat index `i` to multidimensional index.
             to_index(i, out_shape, out_index)
+            # Position in the output storage.
             o = index_to_position(out_index, out_strides)
+
+            # Perform reduction along the specified dimension.
             for s in range(reduce_size):
+                # Update the index for the reduction dimension.
                 out_index[reduce_dim] = s
+                # Position in the input storage.
                 j = index_to_position(out_index, a_strides)
+                # Apply the reduction function.
                 out[o] = fn(out[o], a_storage[j])
 
-    # return njit(parallel=True)(_reduce)
+    # Compile the function with Numba for parallel execution.
     return njit(_reduce, parallel=True)
 
 
