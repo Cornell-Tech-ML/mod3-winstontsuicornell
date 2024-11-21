@@ -35,6 +35,7 @@ The files that will be synced are:
 <br>
 
 <details>
+
 <summary>Diagnostics output from script:</summary>
 MAP
 
@@ -371,6 +372,11 @@ No allocation hoisting found
 None
 
 </details>
+<br>
+
+3.4
+![image 3.4 graph](graphpart4.png)
+
 <br>
 
 <details>
